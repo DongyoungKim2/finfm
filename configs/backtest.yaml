@@ -11,4 +11,4 @@ strategy:
   _target_: src.backtest.strategy.ThresholdLongShort
   long: 0.002
   short: -0.002
-mlflow_uri: "http://mlflow.internal:5000"
+mlflow_uri: "http://localhost:5000"

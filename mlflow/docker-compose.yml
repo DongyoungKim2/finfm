@@ -13,3 +13,6 @@ services:
         --backend-store-uri sqlite:///mlflow/mlflow.db \
         --default-artifact-root /mlflow/mlruns
 
+# mlflow server --host 0.0.0.0 --port 5000 \
+#         --backend-store-uri sqlite:///mlflow/mlflow.db \
+#         --default-artifact-root /workspaces/.devcontainer/finfm/mlflow/mlruns

@@ -13,3 +13,6 @@ typer
 uvicorn
 tenacity
 requests
+joblib
+numpy
+typer
