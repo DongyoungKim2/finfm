@@ -54,11 +54,17 @@ def engineer_features(df: pd.DataFrame, features: Sequence[str]) -> pd.DataFrame
 
     out = df.copy()
 
-    # If columns are multi-indexed (ticker as one of the levels), convert to a
-    # long format with ``symbol`` as an index level so that feature functions can
-    # operate on a single ``close`` column.
-    if isinstance(out.columns, pd.MultiIndex) and "symbol" not in out.index.names:
-        out = out.stack().rename_axis(["date", "symbol"]).sort_index()
+    # When the frame has multi-index columns (typically ticker names as one
+    # level) the indicator functions expect a long format with ``symbol`` as an
+    # index level and simple OHLCV columns.  Always stack the last column level
+    # to achieve this; if the original frame already carried a ``symbol`` index
+    # we drop it to avoid duplicated levels.
+    if isinstance(out.columns, pd.MultiIndex):
+        out = out.stack()
+        if "symbol" in df.index.names:
+            out = out.droplevel(1)
+        out.index.names = ["date", "symbol"]
+        out = out.sort_index()
 
     for feat in features:
         func = FEATURE_FUNCS.get(feat)
