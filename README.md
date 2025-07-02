@@ -6,11 +6,11 @@ stock price forecasting.  It contains utilities for data ingestion,
 pre‑processing, training and a small FastAPI service for inference.
 
 ```
-├─ configs/                # Hydra style YAML configs (placeholders)
+├─ configs/                # Hydra YAML configs
 ├─ data/                   # Raw and processed data folders
 ├─ src/
-│   ├─ cli.py              # Entry points: download, preprocess, train, predict
-│   ├─ data/               # Data fetcher and preprocessing modules
+│   ├─ cli.py              # Entry points: download, preprocess, build_dataset
+│   ├─ data/               # Data pipeline modules
 │   ├─ model/              # TimesFM wrapper and reward function
 │   ├─ train/              # PPO trainer and evaluation utilities
 │   └─ serving/            # FastAPI app and predictor helper
@@ -25,28 +25,25 @@ configurations.
 Install the required packages:
 
 ```bash
-pip install yfinance pandas transformers trl fastapi typer
+pip install -r requirements.txt  # or install via Poetry
 ```
 
-Download historical data:
+Download historical data and cache them:
 
 ```bash
-python -m src.cli download-data \
-  --symbols AAPL MSFT \
-  --start 2015-01-01 --end 2023-01-01 \
-  --output data/raw/prices.csv
+python -m src.cli download
 ```
 
-Preprocess the data:
+Preprocess the data and create features:
 
 ```bash
-python -m src.cli preprocess-data --input-path data/raw/prices.csv
+python -m src.cli preprocess
 ```
 
-Run a dummy training loop (placeholder):
+Build sliding windows and dataset splits:
 
 ```bash
-python -m src.cli train
+python -m src.cli build-dataset
 ```
 
 Start the prediction service:
