@@ -13,6 +13,14 @@ trl = "*"
 fastapi = "*"
 typer = "*"
 uvicorn = "*"
+numpy = "*"
+scikit-learn = "*"
+joblib = "*"
+hydra-core = "*"
+mlflow = "*"
+torch = "*"
+tenacity = "*"
+requests = "*"
 
 [build-system]
 requires = ["poetry-core"]

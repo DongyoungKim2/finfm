@@ -1,6 +1,19 @@
-# Data configuration (placeholder)
-symbols:
-  - AAPL
-  - MSFT
-start: 2015-01-01
-end: 2023-01-01
+defaults:
+  - _self_
+
+vendor: yfinance
+symbols: ["AAPL", "MSFT"]
+start: "2015-01-01"
+end: "2025-07-01"
+interval: "1d"
+context_len: 60
+prediction_len: 1
+features:
+  - close
+  - logret
+  - sma_10
+  - sma_30
+scaler: standard
+split:
+  n_splits: 5
+  test_size_days: 250
