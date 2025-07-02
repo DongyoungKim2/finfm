@@ -1,0 +1,6 @@
+# Data configuration (placeholder)
+symbols:
+  - AAPL
+  - MSFT
+start: 2015-01-01
+end: 2023-01-01
