@@ -5,7 +5,7 @@ import typer
 
 from src.data.fetcher import download
 from src.data.preprocess import preprocess
-from src.train.ppo_trainer import train as train_model
+from src.train import run_train
 from src.serving.predictor import predict
 
 cli = typer.Typer()
@@ -31,8 +31,9 @@ def preprocess_data(
     preprocess(input_path, output_dir)
 
 @cli.command()
-def train(config: str = typer.Option("configs/train.yaml")):
-    train_model(config)
+def train(ticker: str):
+    """Run PPO fine-tuning for *ticker* using Hydra configs."""
+    run_train.main([f"ticker={ticker}"])
 
 @cli.command()
 def predict_cli(

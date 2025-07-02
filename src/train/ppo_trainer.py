@@ -1,30 +1,48 @@
-"""PPO training loop using Hugging Face TRL."""
+"""Lightweight PPO training orchestration."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-
+import numpy as np
 import torch
-from transformers import AutoTokenizer
-from trl import PPOTrainer, PPOConfig
+from torch.utils.data import DataLoader, TensorDataset
+from trl import PPOConfig, PPOTrainer
 
-from src.model.timesfm_wrapper import load_model
-from src.model.reward import reward_fn
+from src.model.timesfm_wrapper import TimesFMForPPO
+from src.train.reward import reward_fn
 
 
-def train(config_path: str) -> None:
-    """Train the TimesFM model with PPO."""
-    # Placeholder example loading config
-    config = PPOConfig()
-    model, tokenizer = load_model()
-    trainer = PPOTrainer(model, ref_model=None, tokenizer=tokenizer, config=config)
+@dataclass
+class TrainerConfig:
+    base_ckpt: str
+    lora_r: int | None
+    data_path: str
+    val_path: str
+    ppo: dict
 
-    # Example training loop using dummy data
-    dummy_input = torch.randint(0, tokenizer.vocab_size, (1, 16))
-    dummy_label = torch.randn(1, 1)
-    rewards = reward_fn(torch.randn(1, 1), dummy_label)
-    trainer.step(dummy_input, dummy_input, rewards)
 
-    Path("mlruns").mkdir(exist_ok=True)
-    # Save model checkpoint (placeholder)
-    trainer.save_pretrained("mlruns/latest")
+def _load_dataset(path: str) -> TensorDataset:
+    data = np.load(path)
+    x = torch.tensor(data["X"], dtype=torch.float32)
+    y = torch.tensor(data["y"], dtype=torch.float32)
+    return TensorDataset(x, y)
+
+
+def train_ppo(cfg: TrainerConfig) -> TimesFMForPPO:
+    """Train a TimesFM model with PPO using *cfg*."""
+    model = TimesFMForPPO(cfg.base_ckpt, cfg.lora_r)
+    ppo_cfg = PPOConfig(**cfg.ppo)
+
+    ds = _load_dataset(cfg.data_path)
+    loader = DataLoader(ds, batch_size=ppo_cfg.rollout_batch_size, shuffle=True)
+
+    trainer = PPOTrainer(ppo_cfg, model, ref_model=None, tokenizer=None)
+
+    for _ in range(ppo_cfg.epochs):
+        for batch in loader:
+            queries = batch[0]
+            true_ret = batch[1]
+            pred, values = model(queries)
+            rewards = reward_fn(pred.squeeze(-1), true_ret.squeeze(-1))
+            trainer.step(queries, pred, rewards)
+
+    return model

@@ -43,10 +43,10 @@ Preprocess the data:
 python -m src.cli preprocess-data --input-path data/raw/prices.csv
 ```
 
-Run a dummy training loop (placeholder):
+Run PPO fine-tuning for a single ticker:
 
 ```bash
-python -m src.cli train
+python -m src.train.run_train ticker=AAPL gitsha=dev
 ```
 
 Start the prediction service:

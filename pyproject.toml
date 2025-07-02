@@ -13,6 +13,9 @@ trl = "*"
 fastapi = "*"
 typer = "*"
 uvicorn = "*"
+mlflow = "*"
+hydra-core = "*"
+peft = "*"
 
 [build-system]
 requires = ["poetry-core"]
