@@ -22,31 +22,64 @@ configurations.
 
 ## Quick start
 
-Install the required packages:
+### 1. Install the dependencies
+
+Create a Python 3.10 environment and install the required packages:
 
 ```bash
-pip install -r requirements.txt  # or install via Poetry
+pip install -r requirements.txt
 ```
 
-Download historical data and cache them:
+### 2. Download raw data
+
+Fetch historical OHLCV prices and cache them under ``data/raw``:
 
 ```bash
-python -m src.cli download
+python -m src.cli download --config configs/data.yaml
 ```
 
-Preprocess the data and create features:
+### 3. Preprocess and feature engineering
+
+Clean the downloaded prices, compute technical indicators and scale the
+features.  The processed arrays are stored under ``data/processed``.
 
 ```bash
-python -m src.cli preprocess
+python -m src.cli preprocess --config configs/data.yaml
 ```
 
-Build sliding windows and dataset splits:
+### 4. Build the training dataset
+
+Create sliding windows of context/target pairs and split them into train
+and test sets:
 
 ```bash
-python -m src.cli build-dataset
+python -m src.cli build-dataset --config configs/data.yaml
 ```
 
-Start the prediction service:
+### 5. Train the model
+
+Run PPO fine-tuning using the configuration in ``configs/train.yaml``.
+Trained checkpoints are saved to the ``checkpoints`` folder and logged to
+MLflow if a tracking URI is configured.
+
+```bash
+python -m src.train.run_train --config configs/train.yaml ticker=AAPL
+```
+
+### 6. Backtest the strategy
+
+Evaluate a trained model on historical data using the built-in threshold
+long/short strategy.  Metrics are logged to MLflow and a pickle of the
+results is saved for further analysis.
+
+```bash
+python -m src.backtest.cli --config configs/backtest.yaml
+```
+
+### 7. Run the inference service
+
+Start the FastAPI app to serve predictions.  By default it loads the
+latest model from the MLflow ``Staging`` stage.
 
 ```bash
 uvicorn src.serving.app:app --reload
