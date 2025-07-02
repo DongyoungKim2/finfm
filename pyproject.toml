@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "finfm"
+version = "0.1.0"
+description = "TimesFM PPO fine-tuning pipeline"
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+yfinance = "*"
+pandas = "*"
+transformers = "*"
+trl = "*"
+fastapi = "*"
+typer = "*"
+uvicorn = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

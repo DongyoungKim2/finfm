@@ -1,0 +1,3 @@
+# Inference configuration (placeholder)
+horizon: 1
+features: [open, high, low, close, volume]
