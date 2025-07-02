@@ -1,0 +1,14 @@
+defaults:
+  - _self_
+
+ticker: "AAPL"
+vendor: "yfinance"
+start: "2018-01-01"
+end: "2020-01-01"
+train_days: 1500
+test_days: 250
+strategy:
+  _target_: src.backtest.strategy.ThresholdLongShort
+  long: 0.002
+  short: -0.002
+mlflow_uri: "http://mlflow.internal:5000"
