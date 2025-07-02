@@ -37,9 +37,32 @@ def repair_calendar(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def engineer_features(df: pd.DataFrame, features: Sequence[str]) -> pd.DataFrame:
+    """Compute the selected technical indicators.
+
+    Parameters
+    ----------
+    df:
+        Price DataFrame indexed by ``date`` and ``symbol``. Some users may load
+        prices with a multi-indexed column layout (for example when downloading
+        several tickers at once with ``yfinance``).  To make the feature
+        engineering robust we detect this case and reshape the frame to the
+        expected long format before computing the indicators.
+    features:
+        Iterable of feature names to compute.  Only names present in
+        ``FEATURE_FUNCS`` are applied.
+    """
+
     out = df.copy()
+
+    # If columns are multi-indexed (ticker as one of the levels), convert to a
+    # long format with ``symbol`` as an index level so that feature functions can
+    # operate on a single ``close`` column.
+    if isinstance(out.columns, pd.MultiIndex) and "symbol" not in out.index.names:
+        out = out.stack().rename_axis(["date", "symbol"]).sort_index()
+
     for feat in features:
         func = FEATURE_FUNCS.get(feat)
         if func is not None:
             out[feat] = func(out)
+
     return out
