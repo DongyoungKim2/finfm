@@ -9,6 +9,7 @@ torch
 trl
 transformers
 fastapi
+pydantic
 typer
 uvicorn
 tenacity
