@@ -1,0 +1,26 @@
+# python 3.11
+yfinance
+pandas
+numpy
+scikit-learn
+joblib
+hydra-core
+mlflow
+torch
+trl
+transformers
+fastapi
+pydantic
+typer
+uvicorn
+tenacity
+requests
+joblib
+numpy
+typer
+gymnasium
+stable-baselines3[extra]
+peft
+timesfm[torch]
+vectorbt
+ipykernel

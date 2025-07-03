@@ -1,0 +1,127 @@
+# backtest_sb3.py
+from __future__ import annotations
+import argparse, os, math, numpy as np, pandas as pd, yfinance as yf
+import gymnasium as gym
+import matplotlib.pyplot as plt
+from stable_baselines3 import PPO
+
+from reward_clip_portfolio_sb3 import (
+    PortfolioEnv, load_prices, make_features, PRESETS, equal_weight
+)
+
+# ────────────────────────────────────────────────
+# Metric helpers
+# ────────────────────────────────────────────────
+def perf_stats(equity: pd.Series, freq: str = "M") -> dict[str, float]:
+    ret   = equity.diff().dropna()
+    years = (equity.index[-1] - equity.index[0]).days / 365.25
+    cagr  = math.exp(equity.iloc[-1])**(1/years) - 1
+    sharpe= np.sqrt(12) * ret.mean() / ret.std(ddof=0)
+    dd    = (equity - equity.cummax())
+    mdd   = dd.min()
+    return {"CAGR": cagr, "Sharpe": sharpe, "MaxDD": mdd}
+
+def turnover(weights: pd.DataFrame) -> float:
+    # L1 change /2 per step, 연환산(for MONTH freq) : *12
+    t = (weights.diff().abs().sum(axis=1) / 2).dropna()
+    return t.mean() * 12
+
+# ────────────────────────────────────────────────
+# Rollout with SB3 policy
+# ────────────────────────────────────────────────
+def rollout_sb3(model: PPO, env: PortfolioEnv) -> tuple[pd.Series,pd.DataFrame]:
+    obs, _ = env.reset()
+    done = False
+    equity = [0.0]
+    w_hist = []
+    while not done:
+        action, _ = model.predict(obs, deterministic=False)
+        obs, r, done, _, _ = env.step(action)
+        equity.append(equity[-1] + r)
+        w_hist.append(env._w.copy())
+    dates = env.y.index[:len(equity)-1]
+    return pd.Series(equity[1:], index=dates), pd.DataFrame(w_hist, index=dates, columns=env.y.columns)
+
+# ────────────────────────────────────────────────
+# CLI
+# ────────────────────────────────────────────────
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model_path", required=True, help="PPO .zip file")
+    ap.add_argument("--tickers", default="US_CORE")
+    ap.add_argument("--start", default="2015-01-01")
+    ap.add_argument("--end",   default="2025-01-01")
+    ap.add_argument("--train_end", default="2022-12-31")
+    ap.add_argument("--freq", choices=["M","W"], default="M")
+    ap.add_argument("--lookback", type=int, default=3)
+    return ap.parse_args()
+
+def main():
+    args = parse_args()
+    tickers = PRESETS.get(args.tickers, args.tickers.split(","))
+    prices  = load_prices(tickers, args.start, args.end)
+
+    X, y = make_features(prices, args.freq)
+    X_te, y_te = X.loc[args.train_end:], y.loc[args.train_end:]
+
+    test_env = PortfolioEnv(X_te, y_te, lookback=args.lookback)
+
+    # ① 정책 불러오기
+    model = PPO.load(args.model_path, device="cpu")
+
+    # ② RL rollout
+    rl_eq, w_hist = rollout_sb3(model, test_env)
+
+    # ③ 베이스라인
+    ew_eq = equal_weight(y_te)
+    mv_eq = None
+    try:
+        # 최소분산 w 계산 (3년 윈도우)
+        mv_w = np.repeat(1/len(tickers), len(tickers))
+        mv_eq_list, idx = [0.0], []
+        for i in range(36, len(y_te)):
+            hist = y_te.iloc[i-36:i]
+            cov  = np.cov(hist.T)
+            inv  = np.linalg.pinv(cov)
+            mv_w = inv.sum(1) / inv.sum()
+            r    = np.dot(y_te.iloc[i], mv_w/mv_w.sum())
+            mv_eq_list.append(mv_eq_list[-1] + r)
+            idx.append(y_te.index[i])
+        mv_eq = pd.Series(mv_eq_list[1:], index=idx)
+    except Exception:
+        print("MV calc skipped (singular matrix)")
+
+    # ④ 성능 요약
+    table = pd.DataFrame({
+        "RL": perf_stats(rl_eq),
+        "EqualW": perf_stats(ew_eq),
+        **({"MinVar": perf_stats(mv_eq)} if mv_eq is not None else {})
+    }).T.round(3)
+    print("\nPerformance Summary")
+    print(table)
+
+    # Turnover
+    to = turnover(w_hist)
+    print(f"\nRL Average Turnover (annualised): {to:.2f}")
+
+    # ⑤ 그래프
+    plt.figure(figsize=(9,5))
+    rl_eq.cumsum().plot(label="RL")
+    ew_eq.cumsum().plot(label="Equal-W")
+    if mv_eq is not None: mv_eq.cumsum().plot(label="Min-Var")
+    plt.legend(); plt.title("Equity Curve (log-return cumsum)")
+    plt.show()
+
+if __name__ == "__main__":
+    main()
+
+    
+# 1) pyfolio 보고서를 화면으로만
+python backtest_sb3.py \
+       --model_path ppo_reward_clip.zip \
+       --pf_out None
+
+# 2) PDF 로 저장 (여러 페이지 자동 합본)
+python backtest_sb3.py \
+       --model_path ppo_reward_clip.zip \
+       --pf_out reports/rl_tearsheet.pdf
