@@ -1,6 +1,4 @@
 # reward_clip_portfolio_sb3.py
-# pip install "stable-baselines3[extra]" yfinance pandas numpy gymnasium
-# python reward_clip_portfolio_sb3.py --tickers US_CORE --freq M --total_steps 300000 --tb_logdir runs/ppo_clip_1 --export_tf exports/ppo_saved_1
 
 from __future__ import annotations
 import argparse, datetime as dt, math, os, random
@@ -14,7 +12,7 @@ from gymnasium import spaces
 
 import torch
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 from stable_baselines3.common.monitor import Monitor
 
 SEED = 42
@@ -106,14 +104,29 @@ class PortfolioEnv(gym.Env):
 # ───────────────────────────────────
 # 3. Back-test helpers
 # ───────────────────────────────────
-def rollout(model, env:PortfolioEnv) -> pd.Series:
-    obs, _ = env.reset()
-    done   = False
-    equity = [0.]
+
+def rollout(model, env: PortfolioEnv) -> pd.Series:
+    # 1) Reset the raw env and grab the obs
+    obs, _ = env.reset()           # obs.shape == (312,)
+
+    done = False
+    equity = [0.0]
+
     while not done:
-        action, _ = model.predict(obs, deterministic=False)
-        obs, r, done, _, _ = env.step(action)
-        equity.append(equity[-1]+r)
+        # 2) Make it a batch of size 1 → shape (1, 312)
+        batched = obs[np.newaxis, ...]
+        # 3) Predict on that batch
+        action, _ = model.predict(batched, deterministic=False)
+        # 4) Squeeze back to shape (n_assets,)
+        action = action[0]
+
+        # 5) Step the raw env with your action
+        obs, reward, terminated, truncated, _ = env.step(action)
+        done = terminated or truncated
+
+        equity.append(equity[-1] + reward)
+
+    # Return a series of cumulative rewards aligned to your test index
     return pd.Series(equity[1:], index=env.y.index[:len(equity)-1])
 
 def equal_weight(y:pd.DataFrame) -> pd.Series:
@@ -133,16 +146,16 @@ PRESETS = {
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tickers", default="US_CORE")
-    ap.add_argument("--start", default="2015-01-01")
+    ap.add_argument("--start", default="2000-01-01")
     ap.add_argument("--end",   default=str(dt.date.today()))
-    ap.add_argument("--train_end", default="2025-07-03")
+    ap.add_argument("--train_end", default="2024-12-31")
     ap.add_argument("--freq", choices=["M","W"], default="M")
     ap.add_argument("--lookback", type=int, default=3)
     ap.add_argument("--total_steps", type=int, default=400_000)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--tb_logdir", default=None,
-        help="TensorBoard 로그를 남길 디렉터리. None이면 기록 안 함")
-    ap.add_argument("--export_tf", default=None,
+        help="TensorBoard 로그를 남길 디렉터리. >None이면 기록 안 함")
+    ap.add_argument("--export", default=None,
         help="학습이 끝난 뒤 SavedModel 을 저장할 디렉터리 경로")
     return ap.parse_args()
 
@@ -158,7 +171,10 @@ def main():
     env_train = DummyVecEnv([lambda: Monitor(
                     PortfolioEnv(X_train, y_train,
                                  lookback=args.lookback))])
-    env_test  = PortfolioEnv(X_te, y_te, lookback=args.lookback)
+    # env_test  = PortfolioEnv(X_te, y_te, lookback=args.lookback)
+    X_test_pad = pd.concat([X_train.iloc[-args.lookback:], X_te])
+    y_test_pad = pd.concat([y_train.iloc[-args.lookback:], y_te])
+    env_test   = PortfolioEnv(X_test_pad, y_test_pad, lookback=args.lookback)
 
     custom_logger = None
     if args.tb_logdir:
@@ -180,6 +196,9 @@ def main():
     if custom_logger:
         model.set_logger(custom_logger)
 
+    print(">> train obs space:", env_train.observation_space.shape)
+    print(">> test  obs space:", env_test.observation_space.shape)
+
     model.learn(total_timesteps=args.total_steps)
 
     rl_eq = rollout(model, env_test)
@@ -188,29 +207,23 @@ def main():
     print(f"\nFinal RL equity: {rl_eq.iloc[-1]:.4f}  "
           f"EW equity: {ew_eq.iloc[-1]:.4f}")
     
-    if args.export_tf:
-        onnx_path = os.path.join(args.export_tf, "policy.onnx")
-        tf_path   = os.path.join(args.export_tf, "saved_model")
-        os.makedirs(args.export_tf, exist_ok=True)
-        print(f"[+] Exporting policy to ONNX → {onnx_path}")
-        model.policy.to("cpu")        # ONNX 는 CPU 기준으로 export
-        # ① PyTorch → ONNX
+    if args.export:
+        export_path = args.export
+        os.makedirs(export_path, exist_ok=True)
+        print(f"[+] Exporting policy via TorchScript trace → {export_path}/policy_traced.pt")
+
+        model.policy.to("cpu")
+        model.policy.eval()
         dummy = torch.rand(1, env_train.observation_space.shape[0])
-        torch.onnx.export(model.policy,
-                          dummy,
-                          onnx_path,
-                          input_names=["obs"],
-                          output_names=["action"],
-                          opset_version=17)
-        # ② ONNX → TensorFlow
-        print(f"[+] Converting ONNX → TensorFlow SavedModel → {tf_path}")
-        import tf2onnx
-        tf2onnx.convert.from_onnx(
-            model_file=onnx_path,
-            output_path=tf_path,
-            opset=17,
-            fold_const=True)
-        print("[✓] SavedModel export complete!")
+        # traced_policy = torch.jit.trace(model.policy, dummy)
+        model.policy.to("cuda")
+        traced_policy = torch.jit.trace(model.policy, dummy.to("cuda"))
+        traced_policy.save(os.path.join(export_path, "policy_traced.pt"))
+
+        print("[✓] TorchScript traced model export complete!")
+
 
 if __name__ == "__main__":
     main()
+
+# python reward_clip_portfolio_sb3.py --tickers US_CORE --freq M --total_steps 500000 --tb_logdir runs/ppo_clip_4 --export exports/ppo_saved_4
